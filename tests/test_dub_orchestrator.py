@@ -41,6 +41,11 @@ class DubOrchestratorTests(unittest.TestCase):
         self.assertFalse(candidate_is_eligible_for_episode(
             row, {"title": "Kaguya-sama S03E03 1080p Multi Sub"},
         ))
+
+    def test_next_plan_skips_stale_subtitle_only_candidates(self):
+        row = {"season_number": 1, "episode_number": 3}
+        raw = '{"selected":{"title":"Anime S01E03 Multi Sub"},"remaining":[{"title":"Anime S01E03 Multi Sub"},{"title":"Anime S01E03 MULTi Audio"}]}'
+        self.assertEqual("Anime S01E03 MULTi Audio", next_candidate_plan(raw, row)["selected"]["title"])
     def test_pack_source_is_not_discarded_while_another_episode_uses_it(self):
         with tempfile.TemporaryDirectory() as directory:
             db = connect_db(Path(directory) / "state.sqlite3")

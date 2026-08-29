@@ -477,10 +477,17 @@ def selected_candidate(raw: str | None) -> dict[str, Any]:
     return value.get("selected", value)
 
 
-def next_candidate_plan(raw: str | None) -> dict[str, Any] | None:
+def next_candidate_plan(
+    raw: str | None, row: sqlite3.Row | None = None,
+) -> dict[str, Any] | None:
     """Drop the probe just disproved and return its next durable candidate."""
     value = json.loads(raw or "{}")
     remaining = list(value.get("remaining") or [])
+    if row is not None:
+        remaining = [
+            candidate for candidate in remaining
+            if candidate_is_eligible_for_episode(row, candidate)
+        ]
     return candidate_plan(remaining) if remaining else None
 
 
@@ -992,7 +999,7 @@ def step_episode(
         if not candidate_is_eligible_for_episode(row, candidate):
             # This is a plan selected under an older rule. It must not keep
             # downloading merely because it predates the corrected selector.
-            fallback = next_candidate_plan(row["candidate_json"])
+            fallback = next_candidate_plan(row["candidate_json"], row)
             discarded = discard_owned_source_if_unshared(db, qbit, row)
             reject_candidate(db, row["infohash"], "candidato deixou de ser elegível após revalidação")
             if fallback is not None:
@@ -1097,7 +1104,7 @@ def step_episode(
         if state == "downloading":
             stalled = probe_is_stalled(torrent, int(row["updated_at"]))
             if stalled:
-                fallback = next_candidate_plan(row["candidate_json"])
+                fallback = next_candidate_plan(row["candidate_json"], row)
                 discard_owned_source_if_unshared(db, qbit, row)
                 reject_candidate(db, row["infohash"], "sem peers/disponibilidade por dez minutos")
                 if fallback is not None:
@@ -1180,7 +1187,7 @@ def step_episode(
                 # A failed probe proves only that *this* candidate is wrong.
                 # Do not leave the season stuck and do not touch a torrent that
                 # pre-existed outside our private staging category.
-                fallback = next_candidate_plan(row["candidate_json"])
+                fallback = next_candidate_plan(row["candidate_json"], row)
                 discard_owned_source_if_unshared(db, qbit, row)
                 reject_candidate(db, row["infohash"], report.reason)
                 if fallback is not None:

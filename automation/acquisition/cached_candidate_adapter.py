@@ -74,6 +74,10 @@ def title_can_cover_episode(title: str, season: int, episode: int) -> bool:
     # episode. Keep the exclusion at this cache seam so every caller inherits it.
     if re.search(r"\b(?:movie|film|le film|the film|gekijouban)\b", text):
         return False
+    # Named recap/compilation specials share a series title but are not a
+    # substitute for a requested TV episode (including normal S00 specials).
+    if re.search(r"\b(?:recollections|recap|compilation)\b", text):
+        return False
     declared_seasons = {
         int(value) for value in re.findall(r"\bs0*(\d{1,3})e\d", text)
     }
