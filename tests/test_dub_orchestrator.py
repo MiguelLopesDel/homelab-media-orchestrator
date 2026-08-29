@@ -36,6 +36,7 @@ class DubOrchestratorTests(unittest.TestCase):
     def test_episode_candidate_rejects_movie_with_shared_series_title(self):
         self.assertFalse(title_can_cover_episode("Violet Evergarden - Le film (2020)", 1, 1))
         self.assertFalse(title_can_cover_episode("Kaguya-sama - Saisons 1/2/3 (11 films)", 3, 3))
+        self.assertFalse(title_can_cover_episode("Kaguya First Kiss S00 S04 DUAL PT-BR", 3, 5))
 
     def test_persisted_candidate_revalidation_rejects_stale_subtitle_only_plan(self):
         row = {"season_number": 1, "episode_number": 3}

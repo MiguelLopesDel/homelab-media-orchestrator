@@ -81,6 +81,12 @@ def title_can_cover_episode(title: str, season: int, episode: int) -> bool:
     declared_seasons = {
         int(value) for value in re.findall(r"\bs0*(\d{1,3})e\d", text)
     }
+    # Packs and specials often declare just ``S00``/``S04`` rather than an
+    # SxxEyy member.  Treat that as a season declaration too, otherwise a
+    # special can be picked for an unrelated regular-season episode.
+    declared_seasons.update(
+        int(value) for value in re.findall(r"\bs0*(\d{1,3})\b", text)
+    )
     declared_seasons.update(
         int(value) for value in re.findall(r"\b0*(\d{1,3})x\d", text)
     )
