@@ -32,6 +32,8 @@ from cached_candidate_adapter import title_can_cover_episode
 
 
 class DubOrchestratorTests(unittest.TestCase):
+    def test_episode_candidate_rejects_movie_with_shared_series_title(self):
+        self.assertFalse(title_can_cover_episode("Violet Evergarden - Le film (2020)", 1, 1))
     def test_pack_source_is_not_discarded_while_another_episode_uses_it(self):
         with tempfile.TemporaryDirectory() as directory:
             db = connect_db(Path(directory) / "state.sqlite3")
@@ -197,6 +199,7 @@ class DubOrchestratorTests(unittest.TestCase):
         self.assertGreater(dub_probe_score("Anime S01E01 MULTi 1080p WEB"), 0)
         self.assertGreater(dub_probe_score("Anime S01E01 Dual-Audio 1080p"), 0)
         self.assertLess(dub_probe_score("Anime S01E01 Multi-Subs PT-BR"), 0)
+        self.assertLess(dub_probe_score("Anime S01E01 Multi Sub 1080p"), 0)
         self.assertLess(dub_probe_score("Anime S01E01 English Dub"), 0)
         self.assertLess(dub_probe_score("Anime S01E01 Multi-Audio German Dub"), 0)
 

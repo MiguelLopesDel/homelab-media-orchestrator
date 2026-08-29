@@ -400,8 +400,9 @@ def dub_probe_score(title: str) -> int:
         text,
     ):
         return -1
-    has_multi_audio = "multi audio" in text or "multiaudio" in text
-    if ("multi subs" in text or "multisubs" in text) and not has_multi_audio:
+    has_multi_audio = bool(re.search(r"\bmulti\s*audio\b", text))
+    has_multi_subs = bool(re.search(r"\bmulti\s*subs?\b", text))
+    if has_multi_subs and not has_multi_audio:
         return -1
     strong = dub_title_score(title)
     if strong > 0:

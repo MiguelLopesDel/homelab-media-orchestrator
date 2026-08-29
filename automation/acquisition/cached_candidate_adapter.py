@@ -70,6 +70,10 @@ def title_can_cover_episode(title: str, season: int, episode: int) -> bool:
     season packs; Sonarr remains the final parser and policy authority.
     """
     text = title.casefold().replace("_", " ").replace(".", " ")
+    # A theatrical film can share a series title but can never supply a TV
+    # episode. Keep the exclusion at this cache seam so every caller inherits it.
+    if re.search(r"\b(?:movie|film|le film|the film|gekijouban)\b", text):
+        return False
     declared_seasons = {
         int(value) for value in re.findall(r"\bs0*(\d{1,3})e\d", text)
     }
