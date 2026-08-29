@@ -6,6 +6,7 @@ from pathlib import Path
 from dub_orchestrator import (
     DATA_ROOT,
     connect_db,
+    dub_probe_score,
     dub_title_score,
     internal_download_url,
     next_episode_job,
@@ -116,11 +117,18 @@ class DubOrchestratorTests(unittest.TestCase):
             self.assertEqual(2, len(complete_pack_mapping(db, leader, full_pack)))
             db.close()
 
-    def test_only_strong_audio_markers_enter_staging(self):
+    def test_only_strong_audio_markers_are_trusted_without_probe(self):
         self.assertGreater(dub_title_score("Anime S01E01 DUBLADO PT-BR 1080p"), 0)
         self.assertGreater(dub_title_score("[Anipakku] Anime S01 [1080p]"), 0)
+        self.assertGreater(dub_title_score("Anime S01E01 Multi-Audio 1080p"), 0)
         self.assertLess(dub_title_score("Anime S01E01 Multi-Subs PT-BR"), 0)
         self.assertLess(dub_title_score("Anime S01E01 English Dub"), 0)
+
+    def test_ambiguous_multi_is_an_audio_probe_only_for_proved_dub_jobs(self):
+        self.assertGreater(dub_probe_score("Anime S01E01 MULTi 1080p WEB"), 0)
+        self.assertGreater(dub_probe_score("Anime S01E01 Dual-Audio 1080p"), 0)
+        self.assertLess(dub_probe_score("Anime S01E01 Multi-Subs PT-BR"), 0)
+        self.assertLess(dub_probe_score("Anime S01E01 English Dub"), 0)
 
     def test_exact_season_episode_wins_inside_pack(self):
         files = [

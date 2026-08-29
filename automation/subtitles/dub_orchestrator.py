@@ -335,7 +335,7 @@ def dub_title_score(title: str) -> int:
     score = 0
     if re.search(r"dublad[oa]s?|portuguese dub|dub pt br", text):
         score += 120
-    if re.search(r"multi audio|multi áudio|dual[^\n]{0,20}pt br", title.casefold()):
+    if re.search(r"multi audio|multi áudio|dual.{0,20}pt br", text):
         score += 100
     if "anipakku" in text or "iceblue" in text:
         score += 90
@@ -346,11 +346,36 @@ def dub_title_score(title: str) -> int:
     return score if score >= 50 else -1
 
 
-def candidate_rank(candidate: dict[str, Any]) -> tuple[int, int, int]:
+def dub_probe_score(title: str) -> int:
+    """Return whether a proved-dub job may probe this release.
+
+    Availability is established before a job exists, from the deterministic
+    episode catalogue.  A release title is therefore not the source of truth:
+    it decides only whether the downloader may fetch one selected episode to
+    inspect its actual audio tracks.  Explicitly foreign releases and
+    subtitle-only ``MULTi`` releases remain ineligible.  Ambiguous
+    ``MULTi``/``DUAL`` releases are eligible as low-priority probes, while
+    explicit PT-BR evidence stays preferred.
+    """
+    text = " ".join(re.findall(r"[a-z0-9]+", title.casefold()))
+    if re.search(r"english dub|dub eng|vostfr|french|truefrench", text):
+        return -1
+    if "multi subs" in text or "multisubs" in text:
+        return -1
+    strong = dub_title_score(title)
+    if strong > 0:
+        return strong + 100
+    if re.search(r"\b(?:multi|dual)\b", text):
+        return 1
+    return -1
+
+
+def candidate_rank(candidate: dict[str, Any]) -> tuple[int, int, int, int]:
     title = str(candidate.get("title", ""))
     resolution_match = re.search(r"\b(720|1080|2160)p\b", title.casefold())
     resolution = int(resolution_match.group(1)) if resolution_match else 0
-    return dub_title_score(title), resolution, int(candidate.get("seeders") or 0)
+    strong = dub_title_score(title)
+    return (1 if strong > 0 else 0, strong, resolution, int(candidate.get("seeders") or 0))
 
 
 def candidate_plan(candidates: list[dict[str, Any]]) -> dict[str, Any]:
@@ -438,7 +463,7 @@ def cache_candidates(job: sqlite3.Row) -> list[dict[str, Any]]:
         )
     output = []
     for item in found:
-        if dub_title_score(item["title"]) < 0 or not item.get("infohash") or candidate_is_rejected(db, item.get("infohash")):
+        if dub_probe_score(item["title"]) < 0 or not item.get("infohash") or candidate_is_rejected(db, item.get("infohash")):
             continue
         output.append({
             **item,
@@ -541,7 +566,7 @@ def search_candidates(db: sqlite3.Connection, job: sqlite3.Row) -> list[dict[str
         download_url = item.get("downloadUrl")
         if protocol != "torrent" or not infohash or not download_url or candidate_is_rejected(db, str(infohash)):
             continue
-        if dub_title_score(title) < 0:
+        if dub_probe_score(title) < 0:
             continue
         download_url = internal_download_url(str(download_url))
         output.append({
@@ -801,9 +826,9 @@ def step_episode(
                 update_job(
                     db, episode_id, "waiting_candidate",
                     next_attempt_at=next_search_at(db, row),
-                    error="nenhuma fonte dublada forte no cache; próxima consulta ao Sonarr respeita o cooldown deste escopo",
+                    error="nenhum candidato elegível para sonda no cache; próxima consulta ao Sonarr respeita o cooldown deste escopo",
                 )
-                event(db, episode_id, "candidate_wait", "no strong cached candidate")
+                event(db, episode_id, "candidate_wait", "no eligible cached probe candidate")
                 return {"episode": label, "state": "waiting_candidate"}
             candidate = found[0]
             update_job(

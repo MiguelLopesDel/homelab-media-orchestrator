@@ -48,7 +48,7 @@ queued
   -> published
 
 saídas conservadoras:
-  waiting_candidate  nenhum candidato forte no cache/budget
+  waiting_candidate  nenhum candidato elegível para sonda no cache/budget
   needs_review       arquivo ambíguo, corte ou timeline diferente
   failed             erro explícito, sem loop destrutivo
   fulfilled          outro processo já resolveu o episódio
@@ -61,8 +61,11 @@ auditor. Queda de energia não perde o trabalho.
 ## Portões de segurança
 
 1. O episódio precisa estar `missing_dub`; legenda não dispara dublagem.
-2. Nome do candidato precisa ter marca forte de áudio: `Dublado`, `Multi-Audio`,
-   grupo revisado como Anipakku/IceBlue etc. `Multi-Subs PT-BR` não passa.
+2. A dublagem já foi provada pelo catálogo antes da busca. Candidatos com marca
+   forte (`Dublado`, `Multi-Audio`, Anipakku/IceBlue etc.) têm prioridade.
+   `MULTi`/`DUAL` sem idioma explícito também pode baixar **um único episódio**
+   para inspeção real das faixas. `English Dub`, francês e `Multi-Subs PT-BR`
+   não passam nem como sonda.
 3. O arquivo baixado precisa conter exatamente uma faixa identificável como
    português. A exceção conservadora é uma única faixa marcada `und`: ela só
    pode ser aceita quando o release já passou pelo marcador forte de dublagem;
@@ -104,8 +107,9 @@ torrent. Torrent incompleto fora de `dub-source` exige revisão.
 - Cortes comprovados e sem diálogo nas lacunas geram manifesto automaticamente;
   casos ambíguos ainda precisam de manifesto revisado.
 - Um filme sem candidato com marca forte de áudio PT-BR fica em
-  `waiting_candidate`. `Dual-Audio` sozinho não prova português — normalmente
-  significa japonês/inglês — e por isso nunca é baixado automaticamente.
+  `waiting_candidate`. Para episódios cuja dublagem já foi confirmada, um
+  `Dual-Audio`/`MULTi` ambíguo pode ser testado em um único arquivo; só uma
+  faixa realmente identificada como português libera o restante do pack.
 
 ## Disponibilidade de dublagem: resolução determinística, override manual
 
