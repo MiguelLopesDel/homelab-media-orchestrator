@@ -213,6 +213,7 @@ class DubOrchestratorTests(unittest.TestCase):
         self.assertGreater(dub_probe_score("Anime S01E01 Dual-Audio 1080p"), 0)
         self.assertLess(dub_probe_score("Anime S01E01 Multi-Subs PT-BR"), 0)
         self.assertLess(dub_probe_score("Anime S01E01 Multi Sub 1080p"), 0)
+        self.assertLess(dub_probe_score("Anime S01E01 Multiple Subs Dual Audio"), 0)
         self.assertLess(dub_probe_score("Anime S01E01 English Dub"), 0)
         self.assertLess(dub_probe_score("Anime S01E01 Multi-Audio German Dub"), 0)
 
