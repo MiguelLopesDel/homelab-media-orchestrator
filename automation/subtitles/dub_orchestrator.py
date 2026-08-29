@@ -577,6 +577,16 @@ def next_search_at(db: sqlite3.Connection, job: sqlite3.Row) -> int:
     return now() if row is None else int(row["last_at"]) + SEARCH_INTERVAL_SECONDS
 
 
+def probe_is_stalled(torrent: dict[str, Any], updated_at: int) -> bool:
+    """Return true only for an unfinished source with no available peers."""
+    return (
+        float(torrent.get("progress") or 0) < 1
+        and float(torrent.get("availability") or 0) <= 0
+        and int(torrent.get("dlspeed") or 0) == 0
+        and now() - updated_at >= PROBE_STALL_SECONDS
+    )
+
+
 def search_candidates(db: sqlite3.Connection, job: sqlite3.Row) -> list[dict[str, Any]]:
     if not search_due(db, job):
         return []
@@ -973,11 +983,7 @@ def step_episode(
             return {"episode": label, "state": next_state, "member": selected["name"]}
 
         if state == "downloading":
-            stalled = (
-                float(torrent.get("availability") or 0) <= 0
-                and int(torrent.get("dlspeed") or 0) == 0
-                and now() - int(row["updated_at"]) >= PROBE_STALL_SECONDS
-            )
+            stalled = probe_is_stalled(torrent, int(row["updated_at"]))
             if stalled:
                 fallback = next_candidate_plan(row["candidate_json"])
                 if row["source_owned"]:

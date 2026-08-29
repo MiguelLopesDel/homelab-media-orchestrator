@@ -20,6 +20,7 @@ from dub_orchestrator import (
     selected_candidate,
     qbit_host_path,
     qbit_member_host_path,
+    probe_is_stalled,
     scan_movie_jobs,
     select_movie_member,
     select_video_member,
@@ -140,6 +141,13 @@ class DubOrchestratorTests(unittest.TestCase):
         provider_multi = {"title": "Example S01E01 1080p CR WEB-DL MULTi AAC", "seeders": 1}
         plain_dual = {"title": "Example S01E01 1080p WEB DUAL AAC", "seeders": 99}
         self.assertGreater(candidate_rank(provider_multi), candidate_rank(plain_dual))
+
+    def test_completed_probe_is_never_rejected_for_lacking_peers(self):
+        old = __import__("time").time_ns() // 1_000_000_000 - 3600
+        stalled = {"progress": 0.5, "availability": 0, "dlspeed": 0}
+        completed = {"progress": 1, "availability": 0, "dlspeed": 0}
+        self.assertTrue(probe_is_stalled(stalled, old))
+        self.assertFalse(probe_is_stalled(completed, old))
 
     def test_cache_candidates_receives_the_state_database_for_rejections(self):
         with tempfile.TemporaryDirectory() as directory:
