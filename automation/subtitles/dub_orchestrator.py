@@ -811,8 +811,16 @@ def step_episode(
     *,
     allow_search: bool,
     excluded_scopes: set[tuple[int, int]] | None = None,
+    episode_id: int | None = None,
 ) -> dict[str, Any]:
-    row = next_episode_job(db, excluded_scopes=excluded_scopes)
+    if episode_id is None:
+        row = next_episode_job(db, excluded_scopes=excluded_scopes)
+    else:
+        row = db.execute(
+            "SELECT * FROM dub_jobs WHERE episode_id=? "
+            "AND state NOT IN ('published','fulfilled')",
+            (episode_id,),
+        ).fetchone()
     if row is None:
         return {"status": "idle"}
     episode_id, state = row["episode_id"], row["state"]
@@ -1243,6 +1251,7 @@ def main() -> int:
     step_parser.add_argument("--apply", action="store_true")
     step_parser.add_argument("--allow-search", action="store_true")
     step_parser.add_argument("--movie-id", type=int)
+    step_parser.add_argument("--episode-id", type=int)
     step_parser.add_argument("--batch", type=int, default=1)
     commands.add_parser("status")
     args = parser.parse_args()
@@ -1255,6 +1264,8 @@ def main() -> int:
             output = status(db)
         elif not args.apply:
             output = {"mode": "preview", **preview(db)}
+        elif args.movie_id is not None and args.episode_id is not None:
+            parser.error("--movie-id e --episode-id não podem ser usados juntos")
         elif args.movie_id is not None:
             output = {
                 "mode": "apply",
@@ -1264,7 +1275,16 @@ def main() -> int:
             if args.batch < 1:
                 parser.error("--batch deve ser pelo menos 1")
             if args.batch == 1:
-                output = {"mode": "apply", **step(db, allow_search=args.allow_search)}
+                if args.episode_id is not None:
+                    output = {
+                        "mode": "apply",
+                        **step_episode(
+                            db, allow_search=args.allow_search,
+                            episode_id=args.episode_id,
+                        ),
+                    }
+                else:
+                    output = {"mode": "apply", **step(db, allow_search=args.allow_search)}
             else:
                 output = {
                     "mode": "apply",

@@ -25,6 +25,7 @@ bin/homelab dub status
 bin/homelab dub step                    # preview
 bin/homelab dub step --apply            # só cache; não consulta indexer
 bin/homelab dub step --apply --allow-search
+bin/homelab dub step --apply --episode-id 123  # sonda controlada de um episódio
 
 bin/homelab dub-audio analyse SOURCE TARGET
 bin/homelab dub-audio publish SOURCE TARGET
