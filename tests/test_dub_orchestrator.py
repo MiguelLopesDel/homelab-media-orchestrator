@@ -22,6 +22,7 @@ from dub_orchestrator import (
     select_movie_member,
     select_video_member,
 )
+from cached_candidate_adapter import title_can_cover_episode
 
 
 class DubOrchestratorTests(unittest.TestCase):
@@ -163,6 +164,10 @@ class DubOrchestratorTests(unittest.TestCase):
             {"index": 1, "name": "Anime Episode 14 v2.mkv", "size": 100_000_000},
         ]
         self.assertIsNone(select_video_member(files, 2, 1, 14))
+
+    def test_cached_candidate_never_crosses_an_explicit_season(self):
+        self.assertFalse(title_can_cover_episode("Example S02E01 Multi-Audio", 1, 1))
+        self.assertTrue(title_can_cover_episode("Example S01E01 Multi-Audio", 1, 1))
 
     def test_single_video_release_is_safe_to_select(self):
         files = [

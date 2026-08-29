@@ -70,6 +70,16 @@ def title_can_cover_episode(title: str, season: int, episode: int) -> bool:
     season packs; Sonarr remains the final parser and policy authority.
     """
     text = title.casefold().replace("_", " ").replace(".", " ")
+    declared_seasons = {
+        int(value) for value in re.findall(r"\bs0*(\d{1,3})e\d", text)
+    }
+    declared_seasons.update(
+        int(value) for value in re.findall(r"\b0*(\d{1,3})x\d", text)
+    )
+    # A release that explicitly names another season must never become a probe
+    # merely because both seasons have an episode with the same number.
+    if declared_seasons and declared_seasons != {season}:
+        return False
     explicit: set[int] = set()
     for pattern in (
         rf"\bs0*{season}e0*(\d{{1,3}})\b",
