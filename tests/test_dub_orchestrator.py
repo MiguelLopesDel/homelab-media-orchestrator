@@ -2,6 +2,7 @@ import sqlite3
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 from dub_orchestrator import (
     DATA_ROOT,
@@ -11,6 +12,7 @@ from dub_orchestrator import (
     internal_download_url,
     next_episode_job,
     candidate_plan,
+    cache_candidates,
     complete_pack_mapping,
     next_candidate_plan,
     search_due,
@@ -129,6 +131,24 @@ class DubOrchestratorTests(unittest.TestCase):
         self.assertGreater(dub_probe_score("Anime S01E01 Dual-Audio 1080p"), 0)
         self.assertLess(dub_probe_score("Anime S01E01 Multi-Subs PT-BR"), 0)
         self.assertLess(dub_probe_score("Anime S01E01 English Dub"), 0)
+
+    def test_cache_candidates_receives_the_state_database_for_rejections(self):
+        with tempfile.TemporaryDirectory() as directory:
+            db = connect_db(Path(directory) / "state.sqlite3")
+            candidate_db = Path(directory) / "candidates.sqlite3"
+            candidate_db.touch()
+            job = {"series_id": 1, "season_number": 1, "episode_number": 1}
+            release = {
+                "title": "Example S01E01 Multi-Audio 1080p",
+                "infohash": "a" * 40,
+                "result_id": "result-1",
+            }
+            with mock.patch("dub_orchestrator.CANDIDATE_DB", candidate_db), \
+                 mock.patch("dub_orchestrator.sonarr", return_value={"title": "Example"}), \
+                 mock.patch("dub_orchestrator.cached_candidates", return_value=[release]):
+                found = cache_candidates(db, job)
+            self.assertEqual("result-1", found[0]["result_id"])
+            db.close()
 
     def test_exact_season_episode_wins_inside_pack(self):
         files = [

@@ -450,7 +450,7 @@ def next_episode_job(
     return min(choices, default=(0, 0, 0, 0, None))[-1]
 
 
-def cache_candidates(job: sqlite3.Row) -> list[dict[str, Any]]:
+def cache_candidates(db: sqlite3.Connection, job: sqlite3.Row) -> list[dict[str, Any]]:
     if not CANDIDATE_DB.exists():
         return []
     series = sonarr(f"/series/{job['series_id']}")
@@ -486,7 +486,7 @@ def movie_aliases(movie: dict[str, Any]) -> list[str]:
     return [alias for alias in aliases if alias]
 
 
-def movie_cache_candidates(job: sqlite3.Row) -> list[dict[str, Any]]:
+def movie_cache_candidates(db: sqlite3.Connection, job: sqlite3.Row) -> list[dict[str, Any]]:
     """Reuse only cached, downloadable releases with strong PT-BR audio evidence."""
     if not CANDIDATE_DB.exists():
         return []
@@ -827,7 +827,7 @@ def step_episode(
     label = f"{row['series_title']} S{row['season_number']:02d}E{row['episode_number']:02d}"
     try:
         if state in {"queued", "waiting_candidate"}:
-            found = cache_candidates(row)
+            found = cache_candidates(db, row)
             if not found and allow_search:
                 found = search_candidates(db, row)
             if not found:
@@ -1038,7 +1038,7 @@ def step_movie(
     label = f"{row['movie_title']} ({row['year'] or '?'})"
     try:
         if state in {"queued", "waiting_candidate"}:
-            found = movie_cache_candidates(row)
+            found = movie_cache_candidates(db, row)
             if not found and allow_search:
                 found = search_movie_candidates(db, row)
             if not found:
