@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
-"""Durable, rate-limited acquisition of PT-BR audio sidecars.
+"""Durable, rate-limited acquisition of PT-BR dubbed media.
 
 The existing language auditor owns the question "which episode needs a dub?".
 This worker owns one narrow continuation: obtain a proven dubbed release in a
-qBittorrent staging category, align it against the existing library video and
-publish external audio.  Sonarr never imports the staging release.
+qBittorrent staging category and aligns it against the existing library video.
+Verified releases at 720p+ replace the library filename through a hardlink;
+external audio is retained only as a low-quality/out-of-band fallback.
 """
 
 from __future__ import annotations
@@ -31,8 +32,11 @@ if _PLUGIN_MODULES and Path(_PLUGIN_MODULES).is_dir():
     sys.path.insert(0, _PLUGIN_MODULES)
 
 from cached_candidate_adapter import candidates as cached_candidates
-from dub_pipeline import AlignmentReport, analyse_episode, episode_spec
-from external_audio_builder import render_episode, verify_episode
+from dub_pipeline import (
+    AlignmentReport, analyse_episode, can_direct_import, episode_spec,
+    replace_library_with_hardlink,
+)
+from external_audio_builder import probe, render_episode, verify_episode
 from timeline_alignment import SystemBusyError
 
 
@@ -1063,6 +1067,15 @@ def step_episode(
 
         if state == "ready":
             report = AlignmentReport(**json.loads(row["alignment_json"]))
+            source = Path(row["source_path"])
+            target = Path(row["target_path"])
+            if can_direct_import(probe(source)):
+                replace_library_with_hardlink(source, target)
+                sidecar = target.with_suffix(".por.default.m4a")
+                sidecar.unlink(missing_ok=True)
+                update_job(db, episode_id, "fulfilled")
+                event(db, episode_id, "library_replaced", str(target))
+                return {"episode": label, "state": "fulfilled", "target": str(target)}
             spec = episode_spec(report)
             try:
                 render_episode(spec, replace=False)

@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import statistics
 import subprocess
 from dataclasses import asdict, dataclass
@@ -35,6 +36,7 @@ MAX_MEDIAN_DISTANCE = 8.0
 MAX_FRAME_DISTANCE = 12
 MIN_MATCH_RATIO = 0.90
 PT_CODES = {"pt", "por", "pob", "pb", "ptbr", "pt-br", "pt_br"}
+MIN_DIRECT_IMPORT_HEIGHT = 720
 
 
 @dataclass(frozen=True)
@@ -68,6 +70,43 @@ def portuguese_audio_index(probe_data: dict[str, Any]) -> int | None:
         if any(_is_portuguese(label) for label in labels):
             matches.append(relative_index)
     return matches[0] if len(matches) == 1 else None
+
+
+def video_height(probe_data: dict[str, Any]) -> int:
+    """Return the first video stream's coded height, or zero when unknown."""
+    for stream in probe_data.get("streams", []):
+        if stream.get("codec_type") == "video":
+            try:
+                return int(stream.get("height") or 0)
+            except (TypeError, ValueError):
+                return 0
+    return 0
+
+
+def can_direct_import(source_probe: dict[str, Any]) -> bool:
+    """A verified dubbed source is library-quality at 720p or above.
+
+    Audio sidecars are a preservation fallback: they are reserved for a dubbed
+    source obtained outside a torrent, or for a source below this threshold.
+    """
+    return video_height(source_probe) >= MIN_DIRECT_IMPORT_HEIGHT
+
+
+def replace_library_with_hardlink(source: Path, target: Path) -> None:
+    """Atomically point the library filename at a completed torrent member.
+
+    ``source`` is never moved, remuxed or altered, so qBittorrent can keep
+    seeding it.  The former library hardlink is merely unlinked after the new
+    one is durable.  The source and target must share a filesystem; silently
+    copying would defeat the seeding/storage invariant and is prohibited.
+    """
+    temporary = target.with_name(f".{target.name}.dub-import")
+    try:
+        temporary.unlink()
+    except FileNotFoundError:
+        pass
+    os.link(source, temporary)
+    os.replace(temporary, target)
 
 
 def dhash(frame: bytes) -> int:

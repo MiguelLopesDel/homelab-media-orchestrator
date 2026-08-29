@@ -8,7 +8,9 @@ from dub_pipeline import (
     compare_fingerprints,
     dhash,
     episode_spec,
+    can_direct_import,
     portuguese_audio_index,
+    video_height,
 )
 from timeline_alignment import TimelinePlan
 
@@ -29,6 +31,11 @@ def rejected_timeline(*_):
 
 
 class DubPipelineTests(unittest.TestCase):
+    def test_direct_import_requires_720p_source(self):
+        self.assertTrue(can_direct_import({"streams": [{"codec_type": "video", "height": 1080}]}))
+        self.assertTrue(can_direct_import({"streams": [{"codec_type": "video", "height": 720}]}))
+        self.assertFalse(can_direct_import({"streams": [{"codec_type": "video", "height": 480}]}))
+        self.assertEqual(0, video_height({"streams": []}))
     def test_portuguese_audio_index_is_relative_to_audio_streams(self):
         probe = {
             "streams": [

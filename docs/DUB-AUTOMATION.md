@@ -8,11 +8,11 @@ modo que um ID do Radarr nunca colida com um ID do Sonarr.
 ```text
 subtitle auditor -> dub job -> cache local -> staging qBittorrent
                                       \-> busca exata limitada (último recurso)
-staging -> prova de áudio por -> prova rápida de timeline -> sidecar -> Jellyfin
+staging -> prova de áudio -> prova rápida de timeline -> hardlink (>=720p) ou sidecar -> Jellyfin
                                       \-> alinhamento por blocos (se divergir)
 ```
 
-O vídeo da biblioteca é entrada somente-leitura. A fonte dublada fica na
+O vídeo do torrent nunca é reescrito. A fonte dublada fica na
 categoria `dub-source`, em `/data/torrents/dub-staging`, e pode continuar
 semeando. Ela nunca é entregue ao Sonarr para importação, portanto não substitui
 o vídeo principal nem quebra seu hardlink/hash.
