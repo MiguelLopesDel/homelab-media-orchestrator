@@ -31,7 +31,7 @@ _PLUGIN_MODULES = os.environ.get("HOMELAB_PLUGIN_DIR")
 if _PLUGIN_MODULES and Path(_PLUGIN_MODULES).is_dir():
     sys.path.insert(0, _PLUGIN_MODULES)
 
-from cached_candidate_adapter import candidates as cached_candidates
+from cached_candidate_adapter import candidates as cached_candidates, title_can_cover_episode
 from dub_pipeline import (
     AlignmentReport, analyse_episode, can_direct_import, can_direct_import_dub, episode_spec,
     replace_library_with_hardlink,
@@ -410,6 +410,20 @@ def dub_probe_score(title: str) -> int:
     if re.search(r"\b(?:multi|dual)\b", text):
         return 1
     return -1
+
+
+def candidate_is_eligible_for_episode(row: sqlite3.Row, candidate: dict[str, Any]) -> bool:
+    """Revalidate persisted plans before they can touch qBittorrent.
+
+    Candidate plans can outlive a scoring-rule deployment. The cache filter is
+    the first gate, but this second gate prevents an already-selected movie or
+    subtitle-only release from being resumed later by the durable worker.
+    """
+    title = str(candidate.get("title") or "")
+    return (
+        dub_probe_score(title) > 0
+        and title_can_cover_episode(title, int(row["season_number"]), int(row["episode_number"]))
+    )
 
 
 def candidate_rank(candidate: dict[str, Any]) -> tuple[int, int, int, int, int]:
@@ -975,6 +989,29 @@ def step_episode(
 
         candidate = selected_candidate(row["candidate_json"])
         qbit = QBit()
+        if not candidate_is_eligible_for_episode(row, candidate):
+            # This is a plan selected under an older rule. It must not keep
+            # downloading merely because it predates the corrected selector.
+            fallback = next_candidate_plan(row["candidate_json"])
+            discarded = discard_owned_source_if_unshared(db, qbit, row)
+            reject_candidate(db, row["infohash"], "candidato deixou de ser elegível após revalidação")
+            if fallback is not None:
+                selected = fallback["selected"]
+                update_job(
+                    db, episode_id, "candidate_selected",
+                    candidate_json=json.dumps(fallback, ensure_ascii=False),
+                    infohash=selected["infohash"], source_path=None, source_owned=0,
+                    error="candidato antigo inválido (filme/legenda); tentando próximo candidato",
+                )
+                event(db, episode_id, "candidate_revalidated", "rejected stale candidate; next candidate")
+                return {"episode": label, "state": "candidate_selected", "discarded": discarded}
+            update_job(
+                db, episode_id, "waiting_candidate", source_path=None, source_owned=0,
+                next_attempt_at=next_search_at(db, row),
+                error="candidato antigo inválido (filme/legenda); aguardando nova busca",
+            )
+            event(db, episode_id, "candidate_revalidated", "rejected stale candidate; no fallback")
+            return {"episode": label, "state": "waiting_candidate", "discarded": discarded}
         if state == "candidate_selected":
             existing = qbit.torrent(row["infohash"])
             if existing is None:

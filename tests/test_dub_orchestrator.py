@@ -7,6 +7,7 @@ from unittest import mock
 from dub_orchestrator import (
     DATA_ROOT,
     connect_db,
+    candidate_is_eligible_for_episode,
     dub_probe_score,
     dub_title_score,
     internal_download_url,
@@ -34,6 +35,12 @@ from cached_candidate_adapter import title_can_cover_episode
 class DubOrchestratorTests(unittest.TestCase):
     def test_episode_candidate_rejects_movie_with_shared_series_title(self):
         self.assertFalse(title_can_cover_episode("Violet Evergarden - Le film (2020)", 1, 1))
+
+    def test_persisted_candidate_revalidation_rejects_stale_subtitle_only_plan(self):
+        row = {"season_number": 1, "episode_number": 3}
+        self.assertFalse(candidate_is_eligible_for_episode(
+            row, {"title": "Kaguya-sama S03E03 1080p Multi Sub"},
+        ))
     def test_pack_source_is_not_discarded_while_another_episode_uses_it(self):
         with tempfile.TemporaryDirectory() as directory:
             db = connect_db(Path(directory) / "state.sqlite3")
@@ -60,7 +67,7 @@ class DubOrchestratorTests(unittest.TestCase):
                    episode_number,target_path,state,candidate_json,infohash,source_owned,
                    created_at,updated_at)
                    VALUES(?,?,?,?,?,?,?,?,?,?,?,?)""",
-                (1, 1, "Example", 1, 1, "/target.mkv", "metadata_wait", "{}", "a" * 40, 1, timestamp, timestamp),
+                (1, 1, "Example", 1, 1, "/target.mkv", "metadata_wait", '{"selected":{"title":"Example S01E01 MULTi","infohash":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}}', "a" * 40, 1, timestamp, timestamp),
             )
             db.commit()
             qbit = mock.Mock()
