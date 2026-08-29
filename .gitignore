@@ -1,0 +1,11 @@
+.env
+.env.*
+!.env.example
+config/dub-availability/dublagem.json
+*.db
+*.sqlite*
+cache/
+logs/
+runtime/
+__pycache__/
+*.py[cod]

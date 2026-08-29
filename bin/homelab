@@ -1,0 +1,85 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+
+usage() {
+  echo "uso: bin/homelab {verify|inventory|language ...|subtitles ...|dub ...|dub-audio ...|torrent-registry ...}" >&2
+  exit 2
+}
+
+verify() {
+  PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONPATH="$ROOT/automation/acquisition:$ROOT/automation/subtitles" \
+    python3 -B -m unittest discover -s "$ROOT/tests" -p 'test_*.py'
+
+  if command -v docker >/dev/null 2>&1 && [[ -f "$ROOT/compose/docker-compose.yml" ]]; then
+    docker compose --env-file "$ROOT/.env.example" -f "$ROOT/compose/docker-compose.yml" config --quiet
+  fi
+
+  local pattern hits
+  pattern='discord(app)?\.com/api/webhooks/[^[:space:]]+|AIza[0-9A-Za-z_-]{30,}|sk-[0-9A-Za-z_-]{16,}|rpc-secret=.+'
+  if command -v rg >/dev/null 2>&1; then
+    hits="$(cd "$ROOT" && rg -n --hidden -g '!.git/**' -g '!bin/homelab' \
+      -g '!inventory/docker-images.tsv' "$pattern" . || true)"
+  else
+    hits="$(cd "$ROOT" && grep -RInE --exclude=homelab --exclude=docker-images.tsv \
+      --exclude-dir=.git "$pattern" . || true)"
+  fi
+  hits="$(printf '%s\n' "$hits" | grep -v 'rpc-secret=CHANGE_ME' || true)"
+  if [[ -n "$hits" ]]; then
+    printf '%s\n' "$hits"
+    echo "possível segredo encontrado" >&2
+    exit 1
+  fi
+
+  if find "$ROOT" -type f \( -name '*.db' -o -name '*.sqlite*' -o -name '*.torrent' -o -name '*.fastresume' \) -print -quit | grep -q .; then
+    echo "estado binário/volátil encontrado" >&2
+    exit 1
+  fi
+
+  echo "verify: ok"
+}
+
+inventory() {
+  local automation_count legacy_count
+  automation_count="$(find "$ROOT/automation" -type f | wc -l)"
+  legacy_count=0
+  if [[ -d "$ROOT/legacy/one-offs" ]]; then
+    legacy_count="$(find "$ROOT/legacy/one-offs" -type f | wc -l)"
+  fi
+  printf '%s\n' \
+    "repo=$ROOT" \
+    "tracked_candidates=$(find "$ROOT" -type f -not -path '*/.git/*' | wc -l)" \
+    "production_automation=$automation_count" \
+    "legacy_one_offs=$legacy_count"
+}
+
+case "${1:-}" in
+  verify) verify ;;
+  inventory) inventory ;;
+  language)
+    shift
+    exec env PYTHONPATH="$ROOT/automation/acquisition:$ROOT/automation/subtitles" \
+      python3 "$ROOT/automation/subtitles/subtitle_orchestrator.py" "$@"
+    ;;
+  subtitles)
+    shift
+    exec python3 "$ROOT/automation/subtitles/subtitle_migration.py" "$@"
+    ;;
+  dub)
+    shift
+    exec env PYTHONPATH="$ROOT/automation/acquisition:$ROOT/automation/subtitles" \
+      python3 "$ROOT/automation/subtitles/dub_orchestrator.py" "$@"
+    ;;
+  dub-audio)
+    shift
+    exec env PYTHONPATH="$ROOT/automation/subtitles" \
+      python3 "$ROOT/automation/subtitles/dub_pipeline.py" "$@"
+    ;;
+  torrent-registry)
+    shift
+    exec python3 "$ROOT/automation/acquisition/torrent-registry.py" "$@"
+    ;;
+  *) usage ;;
+esac

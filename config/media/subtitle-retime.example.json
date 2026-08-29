@@ -1,0 +1,18 @@
+{
+  "version": 1,
+  "source_subtitle": "/data/staging/Anime.S01E01.pt-BR.ass",
+  "target_video": "/data/library/anime/Anime (2026)/Season 01/Anime - S01E01.mkv",
+  "output": "/data/library/anime/Anime (2026)/Season 01/Anime - S01E01.pt-BR.ass",
+  "segments": [
+    {
+      "source_start": 0.0,
+      "source_end": 92.5,
+      "target_start": 0.0
+    },
+    {
+      "source_start": 97.5,
+      "source_end": 1440.0,
+      "target_start": 92.5
+    }
+  ]
+}

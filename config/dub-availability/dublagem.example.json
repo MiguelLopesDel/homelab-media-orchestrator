@@ -1,0 +1,20 @@
+{
+  "series": {
+    "Example completed series": {
+      "temporadas": {
+        "1": {
+          "episodios": "todos",
+          "fonte": "provider catalogue URL or internal verification record"
+        }
+      }
+    },
+    "Example airing series": {
+      "temporadas": {
+        "2": {
+          "episodios": {"ate": 7},
+          "fonte": "provider catalogue, checked 2026-01-01"
+        }
+      }
+    }
+  }
+}
