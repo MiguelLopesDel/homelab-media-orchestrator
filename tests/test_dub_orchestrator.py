@@ -18,6 +18,7 @@ from dub_orchestrator import (
     search_due,
     selected_candidate,
     qbit_host_path,
+    qbit_member_host_path,
     scan_movie_jobs,
     select_movie_member,
     select_video_member,
@@ -258,6 +259,16 @@ class DubOrchestratorTests(unittest.TestCase):
         )
         with self.assertRaisesRegex(ValueError, "fora"):
             qbit_host_path("/downloads", "episode.mkv")
+
+    def test_qbit_member_uses_actual_incomplete_content_path(self):
+        torrent = {
+            "save_path": "/data/torrents/dub-staging",
+            "content_path": "/data/torrents/incompletos/dub-source/pack",
+        }
+        self.assertEqual(
+            DATA_ROOT / "torrents/incompletos/dub-source/pack/episode.mkv",
+            qbit_member_host_path(torrent, "pack/episode.mkv"),
+        )
 
     def test_relative_prowlarr_download_url_is_made_container_reachable(self):
         self.assertEqual(

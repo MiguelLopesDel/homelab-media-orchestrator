@@ -715,6 +715,24 @@ def qbit_host_path(save_path: str, member: str) -> Path:
     raise ValueError(f"save path fora de /data: {save_path}")
 
 
+def qbit_member_host_path(torrent: dict[str, Any], member: str) -> Path:
+    """Resolve a qBittorrent file member through its actual content path.
+
+    Category rules may place active downloads under an incomplete directory
+    even when the requested save path points elsewhere.  ``content_path`` is
+    qBittorrent's authoritative location and must win over ``save_path``.
+    """
+    content_path = str(torrent.get("content_path") or "")
+    member_path = Path(member)
+    if content_path.startswith("/data"):
+        host_content = qbit_host_path(content_path, "")
+        if host_content.name == member_path.name:
+            return host_content
+        if member_path.parts and host_content.name == member_path.parts[0]:
+            return host_content.joinpath(*member_path.parts[1:])
+    return qbit_host_path(str(torrent["save_path"]), member)
+
+
 def complete_pack_mapping(
     db: sqlite3.Connection, row: sqlite3.Row, files: list[dict[str, Any]],
 ) -> list[tuple[sqlite3.Row, dict[str, Any]]]:
@@ -758,6 +776,9 @@ def promote_verified_pack(
     """
     if not row["source_owned"]:
         return 0
+    torrent = qbit.torrent(row["infohash"])
+    if torrent is None:
+        raise RuntimeError("torrent de staging desapareceu durante a promoção do pack")
     files = qbit.get(f"/api/v2/torrents/files?hash={row['infohash']}") or []
     mappings = complete_pack_mapping(db, row, files)
     if not mappings:
@@ -773,7 +794,7 @@ def promote_verified_pack(
             continue
         update_job(
             db, member["episode_id"], "downloading", candidate_json=plan_json,
-            infohash=row["infohash"], source_path=str(STAGING_HOST / video["name"]),
+            infohash=row["infohash"], source_path=str(qbit_member_host_path(torrent, video["name"])),
             source_owned=1, error=None,
         )
         event(db, member["episode_id"], "pack_released", video["name"])
@@ -909,7 +930,7 @@ def step_episode(
                     "hash": row["infohash"], "id": selected["index"], "priority": 1,
                 })
                 qbit.post("/api/v2/torrents/start", {"hashes": row["infohash"]})
-                source_path = STAGING_HOST / selected["name"]
+                source_path = qbit_member_host_path(torrent, selected["name"])
                 next_state = "downloading"
                 event(db, episode_id, "download_started", selected["name"])
             else:
@@ -1111,7 +1132,7 @@ def step_movie(
                     "hash": row["infohash"], "id": selected["index"], "priority": 1,
                 })
                 qbit.post("/api/v2/torrents/start", {"hashes": row["infohash"]})
-                source_path = STAGING_HOST / selected["name"]
+                source_path = qbit_member_host_path(torrent, selected["name"])
                 next_state = "downloading"
                 movie_event(db, movie_id, "download_started", selected["name"])
             else:
