@@ -335,7 +335,10 @@ def dub_title_score(title: str) -> int:
     score = 0
     if re.search(r"dublad[oa]s?|portuguese dub|dub pt br", text):
         score += 120
-    if re.search(r"multi audio|multi áudio|dual.{0,20}pt br", text):
+    if re.search(
+        r"(?:multi audio|multi áudio|dual).{0,20}pt br|pt br.{0,20}(?:multi audio|multi áudio|dual)",
+        text,
+    ):
         score += 100
     if "anipakku" in text or "iceblue" in text:
         score += 90
@@ -358,9 +361,13 @@ def dub_probe_score(title: str) -> int:
     explicit PT-BR evidence stays preferred.
     """
     text = " ".join(re.findall(r"[a-z0-9]+", title.casefold()))
-    if re.search(r"english dub|dub eng|vostfr|french|truefrench", text):
+    if re.search(
+        r"english dub|dub eng|vostfr|french|truefrench|german|deutsch",
+        text,
+    ):
         return -1
-    if "multi subs" in text or "multisubs" in text:
+    has_multi_audio = "multi audio" in text or "multiaudio" in text
+    if ("multi subs" in text or "multisubs" in text) and not has_multi_audio:
         return -1
     strong = dub_title_score(title)
     if strong > 0:
@@ -370,12 +377,35 @@ def dub_probe_score(title: str) -> int:
     return -1
 
 
-def candidate_rank(candidate: dict[str, Any]) -> tuple[int, int, int, int]:
+def candidate_rank(candidate: dict[str, Any]) -> tuple[int, int, int, int, int]:
+    """Rank probes by likely PT-BR yield, never by title alone as proof.
+
+    A complete provider rip marked ``MULTi`` is more likely to retain every
+    provider audio language than a plain ``DUAL`` release, which commonly means
+    Japanese plus English.  The selected episode is still always inspected
+    before the source is accepted.
+    """
     title = str(candidate.get("title", ""))
+    text = " ".join(re.findall(r"[a-z0-9]+", title.casefold()))
     resolution_match = re.search(r"\b(720|1080|2160)p\b", title.casefold())
     resolution = int(resolution_match.group(1)) if resolution_match else 0
     strong = dub_title_score(title)
-    return (1 if strong > 0 else 0, strong, resolution, int(candidate.get("seeders") or 0))
+    has_multi = "multi" in text
+    has_dual = "dual" in text
+    provider_rip = bool(re.search(r"\b(?:cr|crunchyroll)\b", text)) and bool(
+        re.search(r"\bweb (?:dl|rip)\b", text)
+    )
+    if strong > 0:
+        probe_class = 4
+    elif has_multi and not has_dual and provider_rip:
+        probe_class = 3
+    elif has_multi and not has_dual:
+        probe_class = 2
+    elif has_multi:
+        probe_class = 1
+    else:  # plain DUAL: eligible only as the final low-confidence probe.
+        probe_class = 0
+    return (probe_class, strong, resolution, int(candidate.get("seeders") or 0), len(title))
 
 
 def candidate_plan(candidates: list[dict[str, Any]]) -> dict[str, Any]:

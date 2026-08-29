@@ -12,6 +12,7 @@ from dub_orchestrator import (
     internal_download_url,
     next_episode_job,
     candidate_plan,
+    candidate_rank,
     cache_candidates,
     complete_pack_mapping,
     next_candidate_plan,
@@ -124,7 +125,7 @@ class DubOrchestratorTests(unittest.TestCase):
     def test_only_strong_audio_markers_are_trusted_without_probe(self):
         self.assertGreater(dub_title_score("Anime S01E01 DUBLADO PT-BR 1080p"), 0)
         self.assertGreater(dub_title_score("[Anipakku] Anime S01 [1080p]"), 0)
-        self.assertGreater(dub_title_score("Anime S01E01 Multi-Audio 1080p"), 0)
+        self.assertLess(dub_title_score("Anime S01E01 Multi-Audio 1080p"), 0)
         self.assertLess(dub_title_score("Anime S01E01 Multi-Subs PT-BR"), 0)
         self.assertLess(dub_title_score("Anime S01E01 English Dub"), 0)
 
@@ -133,6 +134,12 @@ class DubOrchestratorTests(unittest.TestCase):
         self.assertGreater(dub_probe_score("Anime S01E01 Dual-Audio 1080p"), 0)
         self.assertLess(dub_probe_score("Anime S01E01 Multi-Subs PT-BR"), 0)
         self.assertLess(dub_probe_score("Anime S01E01 English Dub"), 0)
+        self.assertLess(dub_probe_score("Anime S01E01 Multi-Audio German Dub"), 0)
+
+    def test_provider_multi_rip_precedes_plain_dual_probe(self):
+        provider_multi = {"title": "Example S01E01 1080p CR WEB-DL MULTi AAC", "seeders": 1}
+        plain_dual = {"title": "Example S01E01 1080p WEB DUAL AAC", "seeders": 99}
+        self.assertGreater(candidate_rank(provider_multi), candidate_rank(plain_dual))
 
     def test_cache_candidates_receives_the_state_database_for_rejections(self):
         with tempfile.TemporaryDirectory() as directory:

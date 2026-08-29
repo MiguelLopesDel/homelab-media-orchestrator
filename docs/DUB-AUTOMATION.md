@@ -63,7 +63,8 @@ auditor. Queda de energia não perde o trabalho.
 
 1. O episódio precisa estar `missing_dub`; legenda não dispara dublagem.
 2. A dublagem já foi provada pelo catálogo antes da busca. Candidatos com marca
-   forte (`Dublado`, `Multi-Audio`, Anipakku/IceBlue etc.) têm prioridade.
+   forte (`Dublado PT-BR`, idioma português explícito, Anipakku/IceBlue etc.)
+   têm prioridade.
    `MULTi`/`DUAL` sem idioma explícito também pode baixar **um único episódio**
    para inspeção real das faixas. `English Dub`, francês e `Multi-Subs PT-BR`
    não passam nem como sonda.
