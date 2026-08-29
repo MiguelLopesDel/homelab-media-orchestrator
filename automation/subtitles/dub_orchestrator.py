@@ -1064,7 +1064,13 @@ def step_episode(
         if state == "ready":
             report = AlignmentReport(**json.loads(row["alignment_json"]))
             spec = episode_spec(report)
-            render_episode(spec, replace=False)
+            try:
+                render_episode(spec, replace=False)
+            except FileExistsError:
+                # A process can be interrupted after the atomic rename but
+                # before the state commit. Validate that durable sidecar and
+                # make this retry idempotently finish the job.
+                pass
             verify_episode(spec)
             update_job(db, episode_id, "published")
             event(db, episode_id, "published", spec["output"])
@@ -1226,7 +1232,10 @@ def step_movie(
         if state == "ready":
             report = AlignmentReport(**json.loads(row["alignment_json"]))
             spec = episode_spec(report)
-            render_episode(spec, replace=False)
+            try:
+                render_episode(spec, replace=False)
+            except FileExistsError:
+                pass
             verify_episode(spec)
             update_movie_job(db, movie_id, "published")
             movie_event(db, movie_id, "published", spec["output"])
