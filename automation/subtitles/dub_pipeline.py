@@ -19,6 +19,7 @@ from typing import Any, Callable
 
 from external_audio_builder import (
     audio_streams,
+    audio_streams,
     duration,
     probe,
     render_episode,
@@ -90,6 +91,23 @@ def can_direct_import(source_probe: dict[str, Any]) -> bool:
     source obtained outside a torrent, or for a source below this threshold.
     """
     return video_height(source_probe) >= MIN_DIRECT_IMPORT_HEIGHT
+
+
+def can_direct_import_dub(
+    source_probe: dict[str, Any], *, trusted_single_audio_portuguese: bool = False,
+) -> bool:
+    """Whether the complete dubbed video can replace library media as-is.
+
+    Replacing the whole MKV has no cross-file audio-sync problem.  Unlike the
+    sidecar path, it deliberately does not compare video fingerprints with the
+    old release; episode mapping, PT-BR track verification and source quality
+    are the relevant invariants.
+    """
+    if not can_direct_import(source_probe):
+        return False
+    if portuguese_audio_index(source_probe) is not None:
+        return True
+    return trusted_single_audio_portuguese and len(audio_streams(source_probe)) == 1
 
 
 def replace_library_with_hardlink(source: Path, target: Path) -> None:

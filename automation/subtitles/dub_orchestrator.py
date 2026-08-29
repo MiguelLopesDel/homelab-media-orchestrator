@@ -33,7 +33,7 @@ if _PLUGIN_MODULES and Path(_PLUGIN_MODULES).is_dir():
 
 from cached_candidate_adapter import candidates as cached_candidates
 from dub_pipeline import (
-    AlignmentReport, analyse_episode, can_direct_import, episode_spec,
+    AlignmentReport, analyse_episode, can_direct_import, can_direct_import_dub, episode_spec,
     replace_library_with_hardlink,
 )
 from external_audio_builder import probe, render_episode, verify_episode
@@ -52,6 +52,7 @@ QBITTORRENT_URL = "http://127.0.0.1:8080"
 # other proved dub.  The budget is therefore per series/season, not global.
 SEARCH_INTERVAL_SECONDS = 6 * 3600
 PROBE_STALL_SECONDS = 10 * 60
+QBIT_REGISTRATION_GRACE_SECONDS = 5 * 60
 VIDEO_EXTENSIONS = {".mkv", ".mp4", ".m4v"}
 
 
@@ -813,6 +814,28 @@ def qbit_member_host_path(torrent: dict[str, Any], member: str) -> Path:
     return qbit_host_path(str(torrent["save_path"]), member)
 
 
+def source_is_shared(db: sqlite3.Connection, infohash: str, episode_id: int) -> bool:
+    """Whether another unfinished episode still depends on this torrent."""
+    row = db.execute(
+        "SELECT 1 FROM dub_jobs WHERE infohash=? AND episode_id!=? "
+        "AND state NOT IN ('published','fulfilled','failed','needs_review') LIMIT 1",
+        (infohash, episode_id),
+    ).fetchone()
+    return row is not None
+
+
+def discard_owned_source_if_unshared(
+    db: sqlite3.Connection, qbit: QBit, row: sqlite3.Row,
+) -> bool:
+    """Delete only a rejected probe that no other active job references."""
+    if not row["source_owned"]:
+        return False
+    if source_is_shared(db, row["infohash"], row["episode_id"]):
+        return False
+    qbit.discard_owned_source(row["infohash"])
+    return True
+
+
 def complete_pack_mapping(
     db: sqlite3.Connection, row: sqlite3.Row, files: list[dict[str, Any]],
 ) -> list[tuple[sqlite3.Row, dict[str, Any]]]:
@@ -978,6 +1001,14 @@ def step_episode(
 
         torrent = qbit.torrent(row["infohash"])
         if torrent is None:
+            if now() - int(row["updated_at"]) >= QBIT_REGISTRATION_GRACE_SECONDS:
+                update_job(
+                    db, episode_id, "candidate_selected", source_owned=0,
+                    source_path=None,
+                    error="torrent não apareceu após a carência; reenviando candidato",
+                )
+                event(db, episode_id, "torrent_registration_retry", row["infohash"])
+                return {"episode": label, "state": "candidate_selected", "retrying_submission": True}
             error = "torrent de staging ainda não apareceu no qBittorrent; aguardando próximo ciclo"
             update_job(db, episode_id, "metadata_wait", error=error)
             event(db, episode_id, "torrent_registration_wait", row["infohash"])
@@ -1029,8 +1060,7 @@ def step_episode(
             stalled = probe_is_stalled(torrent, int(row["updated_at"]))
             if stalled:
                 fallback = next_candidate_plan(row["candidate_json"])
-                if row["source_owned"]:
-                    qbit.discard_owned_source(row["infohash"])
+                discard_owned_source_if_unshared(db, qbit, row)
                 reject_candidate(db, row["infohash"], "sem peers/disponibilidade por dez minutos")
                 if fallback is not None:
                     next_candidate = fallback["selected"]
@@ -1056,13 +1086,56 @@ def step_episode(
                     raise RuntimeError("torrent completo perdeu o mapeamento do episódio")
                 source = qbit_member_host_path(torrent, selected["name"])
             if not source.is_file():
-                raise RuntimeError(f"download terminou, mas fonte não existe: {source}")
+                update_job(
+                    db, episode_id, "candidate_selected", source_owned=0,
+                    source_path=None,
+                    error="fonte do torrent desapareceu; reenviando candidato sem tocar na biblioteca",
+                )
+                event(db, episode_id, "source_missing_retry", str(source))
+                return {"episode": label, "state": "candidate_selected", "source_missing": True}
             update_job(db, episode_id, "analysing", source_path=str(source))
             return {"episode": label, "state": "analysing"}
 
         if state == "analysing":
+            source = Path(row["source_path"])
+            if not source.is_file():
+                update_job(
+                    db, episode_id, "candidate_selected", source_owned=0,
+                    source_path=None,
+                    error="fonte do torrent desapareceu; reenviando candidato sem tocar na biblioteca",
+                )
+                event(db, episode_id, "source_missing_retry", str(source))
+                return {"episode": label, "state": "candidate_selected", "source_missing": True}
+            source_probe = probe(source)
+            if can_direct_import_dub(
+                source_probe,
+                trusted_single_audio_portuguese=dub_title_score(candidate["title"]) > 0,
+            ):
+                # This is a complete, library-quality dubbed episode.  It is
+                # not an audio-overlay operation, therefore differences in
+                # openings/cuts from the old release must not block import.
+                released = promote_verified_pack(db, qbit, row)
+                target = Path(row["target_path"])
+                replace_library_with_hardlink(source, target)
+                target.with_suffix(".por.default.m4a").unlink(missing_ok=True)
+                evidence = {
+                    "mode": "direct-torrent-import",
+                    "source": str(source),
+                    "target": str(target),
+                    "height": source_probe.get("streams", [{}])[0].get("height"),
+                    "reason": "episódio mapeado, áudio PT-BR e qualidade >=720p",
+                }
+                update_job(
+                    db, episode_id, "fulfilled",
+                    alignment_json=json.dumps(evidence, ensure_ascii=False), error=None,
+                )
+                event(db, episode_id, "library_replaced", str(target))
+                return {
+                    "episode": label, "state": "fulfilled", "target": str(target),
+                    "pack_members_released": released,
+                }
             report = analyse_episode(
-                Path(row["source_path"]), Path(row["target_path"]),
+                source, Path(row["target_path"]),
                 trusted_single_audio_portuguese=dub_title_score(candidate["title"]) > 0,
             )
             if report.confidence != "high":
@@ -1070,8 +1143,7 @@ def step_episode(
                 # Do not leave the season stuck and do not touch a torrent that
                 # pre-existed outside our private staging category.
                 fallback = next_candidate_plan(row["candidate_json"])
-                if row["source_owned"]:
-                    qbit.discard_owned_source(row["infohash"])
+                discard_owned_source_if_unshared(db, qbit, row)
                 reject_candidate(db, row["infohash"], report.reason)
                 if fallback is not None:
                     next_candidate = fallback["selected"]

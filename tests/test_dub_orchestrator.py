@@ -22,6 +22,7 @@ from dub_orchestrator import (
     qbit_member_host_path,
     probe_is_stalled,
     recover_retryable_jobs,
+    source_is_shared,
     scan_movie_jobs,
     select_movie_member,
     select_video_member,
@@ -31,16 +32,33 @@ from cached_candidate_adapter import title_can_cover_episode
 
 
 class DubOrchestratorTests(unittest.TestCase):
+    def test_pack_source_is_not_discarded_while_another_episode_uses_it(self):
+        with tempfile.TemporaryDirectory() as directory:
+            db = connect_db(Path(directory) / "state.sqlite3")
+            db.executemany(
+                """INSERT INTO dub_jobs(episode_id,series_id,series_title,season_number,
+                   episode_number,target_path,state,infohash,created_at,updated_at)
+                   VALUES(?,?,?,?,?,?,?,?,?,?)""",
+                [
+                    (1, 1, "Example", 1, 1, "/one", "analysing", "a" * 40, 1, 1),
+                    (2, 1, "Example", 1, 2, "/two", "downloading", "a" * 40, 1, 1),
+                ],
+            )
+            self.assertTrue(source_is_shared(db, "a" * 40, 1))
+            db.execute("UPDATE dub_jobs SET state='fulfilled' WHERE episode_id=2")
+            self.assertFalse(source_is_shared(db, "a" * 40, 1))
+            db.close()
     def test_absent_fresh_staging_torrent_stays_in_metadata_wait(self):
         """qBittorrent can take a scheduler tick to expose a submitted magnet."""
         with tempfile.TemporaryDirectory() as directory:
             db = connect_db(Path(directory) / "state.sqlite3")
+            timestamp = __import__("time").time_ns() // 1_000_000_000
             db.execute(
                 """INSERT INTO dub_jobs(episode_id,series_id,series_title,season_number,
                    episode_number,target_path,state,candidate_json,infohash,source_owned,
                    created_at,updated_at)
                    VALUES(?,?,?,?,?,?,?,?,?,?,?,?)""",
-                (1, 1, "Example", 1, 1, "/target.mkv", "metadata_wait", "{}", "a" * 40, 1, 1, 1),
+                (1, 1, "Example", 1, 1, "/target.mkv", "metadata_wait", "{}", "a" * 40, 1, timestamp, timestamp),
             )
             db.commit()
             qbit = mock.Mock()

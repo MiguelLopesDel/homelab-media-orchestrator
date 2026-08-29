@@ -9,6 +9,7 @@ from dub_pipeline import (
     dhash,
     episode_spec,
     can_direct_import,
+    can_direct_import_dub,
     portuguese_audio_index,
     video_height,
 )
@@ -36,6 +37,22 @@ class DubPipelineTests(unittest.TestCase):
         self.assertTrue(can_direct_import({"streams": [{"codec_type": "video", "height": 720}]}))
         self.assertFalse(can_direct_import({"streams": [{"codec_type": "video", "height": 480}]}))
         self.assertEqual(0, video_height({"streams": []}))
+
+    def test_direct_import_requires_quality_and_portuguese_audio(self):
+        dubbed = {
+            "streams": [
+                {"codec_type": "video", "height": 1080},
+                {"codec_type": "audio", "tags": {"language": "jpn"}},
+                {"codec_type": "audio", "tags": {"language": "por"}},
+            ]
+        }
+        self.assertTrue(can_direct_import_dub(dubbed))
+        self.assertFalse(can_direct_import_dub({
+            "streams": [{"codec_type": "video", "height": 1080}, {"codec_type": "audio", "tags": {"language": "jpn"}}]
+        }))
+        self.assertFalse(can_direct_import_dub({
+            "streams": [{"codec_type": "video", "height": 480}, {"codec_type": "audio", "tags": {"language": "por"}}]
+        }))
     def test_portuguese_audio_index_is_relative_to_audio_streams(self):
         probe = {
             "streams": [
