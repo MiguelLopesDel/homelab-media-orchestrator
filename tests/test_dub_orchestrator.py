@@ -21,14 +21,59 @@ from dub_orchestrator import (
     qbit_host_path,
     qbit_member_host_path,
     probe_is_stalled,
+    recover_retryable_jobs,
     scan_movie_jobs,
     select_movie_member,
     select_video_member,
+    step_episode,
 )
 from cached_candidate_adapter import title_can_cover_episode
 
 
 class DubOrchestratorTests(unittest.TestCase):
+    def test_absent_fresh_staging_torrent_stays_in_metadata_wait(self):
+        """qBittorrent can take a scheduler tick to expose a submitted magnet."""
+        with tempfile.TemporaryDirectory() as directory:
+            db = connect_db(Path(directory) / "state.sqlite3")
+            db.execute(
+                """INSERT INTO dub_jobs(episode_id,series_id,series_title,season_number,
+                   episode_number,target_path,state,candidate_json,infohash,source_owned,
+                   created_at,updated_at)
+                   VALUES(?,?,?,?,?,?,?,?,?,?,?,?)""",
+                (1, 1, "Example", 1, 1, "/target.mkv", "metadata_wait", "{}", "a" * 40, 1, 1, 1),
+            )
+            db.commit()
+            qbit = mock.Mock()
+            qbit.torrent.return_value = None
+            with mock.patch("dub_orchestrator.QBit", return_value=qbit):
+                result = step_episode(db, allow_search=False, episode_id=1)
+            self.assertEqual("metadata_wait", result["state"])
+            self.assertEqual(
+                "metadata_wait",
+                db.execute("SELECT state FROM dub_jobs WHERE episode_id=1").fetchone()[0],
+            )
+            db.close()
+
+    def test_known_historical_failures_are_reopened_but_review_failures_are_not(self):
+        with tempfile.TemporaryDirectory() as directory:
+            db = connect_db(Path(directory) / "state.sqlite3")
+            rows = [
+                (1, "NameError: name 'db' is not defined", "candidate_selected"),
+                (2, "RuntimeError: torrent de staging ainda não apareceu no qBittorrent", "candidate_selected"),
+                (3, "não foi possível identificar exatamente um episódio", "failed"),
+            ]
+            for episode_id, error, _ in rows:
+                db.execute(
+                    """INSERT INTO dub_jobs(episode_id,series_id,series_title,season_number,
+                       episode_number,target_path,state,candidate_json,infohash,last_error,created_at,updated_at)
+                       VALUES(?,?,?,?,?,?,?,?,?,?,?,?)""",
+                    (episode_id, 1, "Example", 1, episode_id, "/target.mkv", "failed", "{}", "a" * 40, error, 1, 1),
+                )
+            self.assertEqual(2, recover_retryable_jobs(db))
+            for episode_id, _, expected in rows:
+                state = db.execute("SELECT state FROM dub_jobs WHERE episode_id=?", (episode_id,)).fetchone()[0]
+                self.assertEqual(expected, state)
+            db.close()
     def test_candidate_plan_preserves_fallback_order(self):
         plan = candidate_plan([{"title": "first"}, {"title": "second"}])
         self.assertEqual("first", selected_candidate(__import__("json").dumps(plan))["title"])

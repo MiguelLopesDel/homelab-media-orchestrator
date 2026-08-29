@@ -258,8 +258,36 @@ def sonarr_episode(episode_id: int) -> dict[str, Any]:
     return sonarr(f"/episode/{episode_id}")
 
 
+def recover_retryable_jobs(db: sqlite3.Connection) -> int:
+    """Reopen only failures caused by bugs/races that this version can retry.
+
+    ``failed`` remains terminal for malformed media and unsafe mappings.  These
+    two signatures are different: qBittorrent registration is eventually
+    consistent, and the historical ``NameError`` was a code defect fixed in
+    this worker.  Both retain their selected candidate and are safe to resume.
+    """
+    recovered = 0
+    for row in db.execute(
+        "SELECT episode_id,infohash,candidate_json,last_error FROM dub_jobs "
+        "WHERE state='failed'"
+    ):
+        error = str(row["last_error"] or "")
+        retryable = (
+            "torrent de staging ainda não apareceu no qBittorrent" in error
+            or "NameError: name 'db' is not defined" in error
+        )
+        if not retryable:
+            continue
+        state = "candidate_selected" if row["infohash"] and row["candidate_json"] else "waiting_candidate"
+        update_job(db, row["episode_id"], state, error="retomado automaticamente: falha transitória corrigida")
+        event(db, row["episode_id"], "retry_recovered", error)
+        recovered += 1
+    return recovered
+
+
 def scan_jobs(db: sqlite3.Connection) -> dict[str, int]:
     created = fulfilled = 0
+    recovered = recover_retryable_jobs(db)
     timestamp = now()
     missing = list(db.execute(
         "SELECT * FROM episode_state WHERE decision_state='missing_dub' ORDER BY updated_at"
@@ -298,6 +326,7 @@ def scan_jobs(db: sqlite3.Connection) -> dict[str, int]:
         "movie_created": movie_result["created"],
         "movie_fulfilled": movie_result["fulfilled"],
         "movies_missing_dub": movie_result["missing_dub"],
+        "recovered": recovered,
     }
 
 
@@ -949,7 +978,10 @@ def step_episode(
 
         torrent = qbit.torrent(row["infohash"])
         if torrent is None:
-            raise RuntimeError("torrent de staging ainda não apareceu no qBittorrent")
+            error = "torrent de staging ainda não apareceu no qBittorrent; aguardando próximo ciclo"
+            update_job(db, episode_id, "metadata_wait", error=error)
+            event(db, episode_id, "torrent_registration_wait", row["infohash"])
+            return {"episode": label, "state": "metadata_wait", "waiting_for_qbittorrent": True}
         if state == "metadata_wait":
             files = qbit.get(f"/api/v2/torrents/files?hash={row['infohash']}") or []
             if not files and row["source_owned"]:
@@ -1184,7 +1216,10 @@ def step_movie(
 
         torrent = qbit.torrent(row["infohash"])
         if torrent is None:
-            raise RuntimeError("torrent de staging ainda não apareceu no qBittorrent")
+            error = "torrent de staging ainda não apareceu no qBittorrent; aguardando próximo ciclo"
+            update_movie_job(db, movie_id, "metadata_wait", error=error)
+            movie_event(db, movie_id, "torrent_registration_wait", row["infohash"])
+            return {"movie": label, "state": "metadata_wait", "waiting_for_qbittorrent": True}
         if state == "metadata_wait":
             files = qbit.get(f"/api/v2/torrents/files?hash={row['infohash']}") or []
             selected = select_movie_member(files)
