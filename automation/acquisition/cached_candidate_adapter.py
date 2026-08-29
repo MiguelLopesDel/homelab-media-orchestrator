@@ -101,7 +101,14 @@ def title_can_cover_episode(title: str, season: int, episode: int) -> bool:
         r"(?:\bepisode\s*|\bep\s*|\s-\s)0*(\d{1,3})\b",
     ):
         explicit.update(int(value) for value in re.findall(pattern, text))
-    return not explicit or episode in explicit
+    if explicit:
+        return episode in explicit
+    if declared_seasons:
+        return True
+    # A title with neither episode nor season can still be a real season pack,
+    # but only when it explicitly says so. This excludes named films/specials
+    # such as "First Kiss" that otherwise look like an unnumbered release.
+    return bool(re.search(r"\b(?:batch|complete|season|collection)\b", text))
 
 
 def candidates(db: sqlite3.Connection, aliases: list[str], season: int, episode: int) -> list[dict]:
