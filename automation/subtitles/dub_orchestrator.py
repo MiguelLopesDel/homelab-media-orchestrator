@@ -384,10 +384,10 @@ def dub_probe_score(title: str) -> int:
 def candidate_rank(candidate: dict[str, Any]) -> tuple[int, int, int, int, int]:
     """Rank probes by likely PT-BR yield, never by title alone as proof.
 
-    A complete provider rip marked ``MULTi`` is more likely to retain every
-    provider audio language than a plain ``DUAL`` release, which commonly means
-    Japanese plus English.  The selected episode is still always inspected
-    before the source is accepted.
+    A season pack with a Portuguese/MULTi/VAR hint is the best probe: inspecting
+    its first episode can unlock the entire season.  A plain ``DUAL`` pack gets
+    no such preference because it commonly means Japanese plus English.  The
+    selected episode is still always inspected before any source is accepted.
     """
     title = str(candidate.get("title", ""))
     text = " ".join(re.findall(r"[a-z0-9]+", title.casefold()))
@@ -396,11 +396,18 @@ def candidate_rank(candidate: dict[str, Any]) -> tuple[int, int, int, int, int]:
     strong = dub_title_score(title)
     has_multi = "multi" in text
     has_dual = "dual" in text
+    has_var_hint = bool(re.search(r"\bvar(?:yg)?\b", text))
+    season_pack = bool(re.search(
+        r"\b(?:batch|complete|season[ ._-]*0?\d+)\b|\bs\d{1,2}e\d{1,3}\s*(?:-|to)\s*(?:s\d{1,2}e?)?\d{1,3}\b",
+        title.casefold(),
+    ))
     provider_rip = bool(re.search(r"\b(?:cr|crunchyroll)\b", text)) and bool(
         re.search(r"\bweb (?:dl|rip)\b", text)
     )
-    if strong > 0:
-        probe_class = 4
+    if season_pack and (strong > 0 or has_multi or has_var_hint):
+        probe_class = 6
+    elif strong > 0:
+        probe_class = 5
     elif has_multi and not has_dual and provider_rip:
         probe_class = 3
     elif has_multi and not has_dual:

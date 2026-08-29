@@ -142,6 +142,16 @@ class DubOrchestratorTests(unittest.TestCase):
         plain_dual = {"title": "Example S01E01 1080p WEB DUAL AAC", "seeders": 99}
         self.assertGreater(candidate_rank(provider_multi), candidate_rank(plain_dual))
 
+    def test_hinting_season_pack_precedes_single_episode_multi(self):
+        pack = {"title": "Example Season 01 Batch 1080p CR WEB-DL MULTi AAC", "seeders": 1}
+        single = {"title": "Example S01E01 1080p CR WEB-DL MULTi AAC", "seeders": 99}
+        self.assertGreater(candidate_rank(pack), candidate_rank(single))
+
+    def test_plain_dual_pack_does_not_precede_single_episode_multi(self):
+        dual_pack = {"title": "Example Season 01 Batch 1080p WEB Dual-Audio", "seeders": 999}
+        single = {"title": "Example S01E01 1080p CR WEB-DL MULTi AAC", "seeders": 1}
+        self.assertGreater(candidate_rank(single), candidate_rank(dual_pack))
+
     def test_completed_probe_is_never_rejected_for_lacking_peers(self):
         old = __import__("time").time_ns() // 1_000_000_000 - 3600
         stalled = {"progress": 0.5, "availability": 0, "dlspeed": 0}

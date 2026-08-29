@@ -71,6 +71,11 @@ auditor. Queda de energia não perde o trabalho.
 3. O arquivo baixado precisa conter exatamente uma faixa identificável como
    português. A exceção conservadora é uma única faixa marcada `und`: ela só
    pode ser aceita quando o release já passou pelo marcador forte de dublagem;
+
+Para cada temporada, o ranking dá preferência a um **pack** (`Batch`,
+`Season 01`, `S01E01-E12`) quando seu título indica PT-BR, `MULTi` ou `VAR`.
+O primeiro episódio é inspecionado antes de o restante ser aceito. Um pack
+`DUAL` sem esses sinais não recebe bônus: normalmente é apenas japonês+inglês.
    essa origem fica registrada como evidência, sem fingir que veio do `ffprobe`.
 4. O membro do torrent precisa corresponder sem ambiguidade ao SxxExx/absoluto.
    Em filmes, um pack misto só passa quando exatamente um vídeo é marcado como
