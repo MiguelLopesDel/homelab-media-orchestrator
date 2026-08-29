@@ -997,9 +997,18 @@ def step_episode(
                     "progress": round(float(torrent.get("progress") or 0), 4),
                 }
             source = Path(row["source_path"])
+            if row["source_owned"]:
+                files = qbit.get(f"/api/v2/torrents/files?hash={row['infohash']}") or []
+                selected = select_video_member(
+                    files, row["season_number"], row["episode_number"],
+                    row["absolute_episode_number"],
+                )
+                if selected is None:
+                    raise RuntimeError("torrent completo perdeu o mapeamento do episódio")
+                source = qbit_member_host_path(torrent, selected["name"])
             if not source.is_file():
                 raise RuntimeError(f"download terminou, mas fonte não existe: {source}")
-            update_job(db, episode_id, "analysing")
+            update_job(db, episode_id, "analysing", source_path=str(source))
             return {"episode": label, "state": "analysing"}
 
         if state == "analysing":
@@ -1183,9 +1192,15 @@ def step_movie(
                     "progress": round(float(torrent.get("progress") or 0), 4),
                 }
             source = Path(row["source_path"])
+            if row["source_owned"]:
+                files = qbit.get(f"/api/v2/torrents/files?hash={row['infohash']}") or []
+                selected = select_movie_member(files)
+                if selected is None:
+                    raise RuntimeError("torrent completo perdeu o mapeamento do filme")
+                source = qbit_member_host_path(torrent, selected["name"])
             if not source.is_file():
                 raise RuntimeError(f"download terminou, mas fonte não existe: {source}")
-            update_movie_job(db, movie_id, "analysing")
+            update_movie_job(db, movie_id, "analysing", source_path=str(source))
             return {"movie": label, "state": "analysing"}
 
         if state == "analysing":
