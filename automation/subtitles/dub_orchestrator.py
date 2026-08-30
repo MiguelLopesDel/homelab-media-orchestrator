@@ -972,6 +972,7 @@ def step_episode(
     allow_search: bool,
     excluded_scopes: set[tuple[int, int]] | None = None,
     episode_id: int | None = None,
+    _continuations: int = 0,
 ) -> dict[str, Any]:
     if episode_id is None:
         row = next_episode_job(db, excluded_scopes=excluded_scopes)
@@ -1157,6 +1158,15 @@ def step_episode(
                 event(db, episode_id, "source_missing_retry", str(source))
                 return {"episode": label, "state": "candidate_selected", "source_missing": True}
             update_job(db, episode_id, "analysing", source_path=str(source))
+            # A completed local member can be probed immediately. Waiting for
+            # another cron tick here made a sub-second ffprobe take 5–15 min.
+            if _continuations < 1:
+                db.commit()
+                return step_episode(
+                    db, allow_search=allow_search,
+                    excluded_scopes=excluded_scopes, episode_id=episode_id,
+                    _continuations=_continuations + 1,
+                )
             return {"episode": label, "state": "analysing"}
 
         if state == "analysing":

@@ -41,6 +41,31 @@ def create_dubbed_fixture(path: Path) -> None:
 
 
 class OfflineDubFlowTests(unittest.TestCase):
+    def test_completed_download_is_probed_and_imported_in_one_worker_call(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source, target = root / "source.mkv", root / "library.mkv"
+            create_dubbed_fixture(source)
+            create_dubbed_fixture(target)
+            db = connect_db(root / "state.sqlite3")
+            db.execute(
+                """INSERT INTO dub_jobs(episode_id,series_id,series_title,season_number,
+                   episode_number,target_path,state,candidate_json,infohash,source_path,
+                   source_owned,created_at,updated_at)
+                   VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                (2, 2, "Offline completed", 1, 1, str(target), "downloading",
+                 json.dumps({"selected": {"title": "Offline completed S01E01 Dublado PT-BR 720p"}}),
+                 "offline-complete", str(source), 0, 1, 1),
+            )
+            db.commit()
+            qbit = mock.Mock()
+            qbit.torrent.return_value = {"progress": 1, "save_path": "/data"}
+            with mock.patch("dub_orchestrator.QBit", return_value=qbit):
+                result = step_episode(db, allow_search=False, episode_id=2)
+            self.assertEqual("fulfilled", result["state"])
+            self.assertEqual(os.stat(source).st_ino, os.stat(target).st_ino)
+            db.close()
+
     def test_verified_720p_ptbr_torrent_is_hardlinked_not_transcoded(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
