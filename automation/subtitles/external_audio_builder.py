@@ -23,7 +23,7 @@ def probe(path: Path) -> dict[str, Any]:
     result = subprocess.run(
         [
             "ffprobe", "-v", "error", "-show_entries",
-            "format=duration:stream=index,codec_type,codec_name,channels:stream_tags=language",
+            "format=duration:stream=index,codec_type,codec_name,channels,width,height:stream_tags=language,title",
             "-of", "json", str(path),
         ],
         check=True,
