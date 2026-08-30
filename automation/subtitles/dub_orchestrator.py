@@ -53,6 +53,7 @@ QBITTORRENT_URL = "http://127.0.0.1:8080"
 SEARCH_INTERVAL_SECONDS = 6 * 3600
 PROBE_STALL_SECONDS = 10 * 60
 QBIT_REGISTRATION_GRACE_SECONDS = 5 * 60
+METADATA_RETRY_SECONDS = 30 * 60
 VIDEO_EXTENSIONS = {".mkv", ".mp4", ".m4v"}
 
 
@@ -515,18 +516,28 @@ def next_episode_job(
     rows = list(db.execute(
         """SELECT * FROM dub_jobs
            WHERE state NOT IN ('published','fulfilled','needs_review','failed')
-             AND (state != 'waiting_candidate' OR next_attempt_at IS NULL OR next_attempt_at<=?)
+             AND (state NOT IN ('waiting_candidate','metadata_wait')
+                  OR next_attempt_at IS NULL OR next_attempt_at<=?)
            ORDER BY series_id, season_number, episode_number, episode_id"""
     , (now(),)))
     grouped: dict[tuple[int, int], list[sqlite3.Row]] = {}
     for row in rows:
         key = (int(row["series_id"]), int(row["season_number"]))
         grouped.setdefault(key, []).append(row)
-    choices: list[tuple[int, int, int, int, sqlite3.Row]] = []
+    choices: list[tuple[int, int, int, int, int, sqlite3.Row]] = []
     active_states = {
         "candidate_selected", "metadata_wait", "downloading", "analysing", "ready",
     }
     excluded_scopes = excluded_scopes or set()
+    continuation_priority = {
+        # Finish durable work first. A ready item is one cheap atomic publish,
+        # whereas an unseeded magnet can wait without holding the queue.
+        "ready": 0,
+        "analysing": 1,
+        "downloading": 2,
+        "candidate_selected": 3,
+        "metadata_wait": 4,
+    }
     for (series_id, season), members in grouped.items():
         if (series_id, season) in excluded_scopes:
             continue
@@ -534,13 +545,16 @@ def next_episode_job(
             *active_states,
         }]
         if active:
-            chosen = min(active, key=lambda item: (item["updated_at"], item["episode_number"], item["episode_id"]))
-            choices.append((0, int(chosen["updated_at"]), series_id, season, chosen))
+            chosen = min(active, key=lambda item: (
+                continuation_priority[item["state"]], item["updated_at"],
+                item["episode_number"], item["episode_id"],
+            ))
+            choices.append((0, continuation_priority[chosen["state"]], int(chosen["updated_at"]), series_id, season, chosen))
         else:
             # No active source: the first episode is the cheap probe for this scope.
             chosen = members[0]
-            choices.append((1, int(chosen["updated_at"]), series_id, season, chosen))
-    return min(choices, default=(0, 0, 0, 0, None))[-1]
+            choices.append((1, 0, int(chosen["updated_at"]), series_id, season, chosen))
+    return min(choices, default=(0, 0, 0, 0, 0, None))[-1]
 
 
 def cache_candidates(db: sqlite3.Connection, job: sqlite3.Row) -> list[dict[str, Any]]:
@@ -1071,7 +1085,11 @@ def step_episode(
                         break
                 qbit.post("/api/v2/torrents/stop", {"hashes": row["infohash"]})
             if not files:
-                update_job(db, episode_id, "metadata_wait", error="metadata ainda indisponível; manter staging parado e tentar novamente")
+                update_job(
+                    db, episode_id, "metadata_wait",
+                    next_attempt_at=now() + METADATA_RETRY_SECONDS,
+                    error="metadata ainda indisponível; nova tentativa em 30 minutos",
+                )
                 return {"episode": label, "state": "metadata_wait"}
             selected = select_video_member(
                 files, row["season_number"], row["episode_number"],

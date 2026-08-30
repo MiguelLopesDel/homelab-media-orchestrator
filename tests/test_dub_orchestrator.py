@@ -149,6 +149,22 @@ class DubOrchestratorTests(unittest.TestCase):
             self.assertEqual(101, next_episode_job(db)["episode_id"])
             db.close()
 
+    def test_scheduler_publishes_ready_work_before_unseeded_metadata_probe(self):
+        """A completed verification must never wait behind a dead magnet."""
+        with tempfile.TemporaryDirectory() as directory:
+            db = connect_db(Path(directory) / "state.sqlite3")
+            rows = [
+                (101, 1, "Dead magnet", 1, 1, "/one", "metadata_wait", 1, 1),
+                (201, 2, "Verified", 1, 1, "/two", "ready", 100, 100),
+            ]
+            db.executemany(
+                """INSERT INTO dub_jobs(episode_id,series_id,series_title,season_number,
+                   episode_number,target_path,state,created_at,updated_at)
+                   VALUES(?,?,?,?,?,?,?,?,?)""", rows,
+            )
+            self.assertEqual(201, next_episode_job(db)["episode_id"])
+            db.close()
+
     def test_waiting_scope_in_cooldown_does_not_block_another_proved_dub(self):
         with tempfile.TemporaryDirectory() as directory:
             db = connect_db(Path(directory) / "state.sqlite3")
